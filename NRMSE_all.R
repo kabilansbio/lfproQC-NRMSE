@@ -283,7 +283,75 @@ nrmse_comp <- function (data_input, groups){
   # Converting all zeros to NAs
   data_input[data_input == 0] <- NA
   
-  data_input <- as.data.frame(data_input[,-1])
+  complete_data_fn <- function(data, groups) {
+    # Rename the columns in the groups data
+    colnames(groups) <- c("name", "group")
+    
+    # Add a new column to preserve the original order of rows
+    data <- data %>% dplyr::mutate(original_order = dplyr::row_number())
+    
+    # Rename the first column of data
+    colnames(data)[1] <- "rowid"
+    
+    # Reshape the data into long format
+    long_data <- data %>%
+      tidyr::pivot_longer(-c(rowid, original_order), names_to = "name", values_to = "mass")
+    
+    # Merge with groups to add group information
+    long_data <- long_data %>%
+      dplyr::left_join(groups, by = "name")
+    
+    # Identify rows where any group has all missing values
+    group_summary <- long_data %>%
+      dplyr::group_by(rowid, group) %>%
+      dplyr::summarise(all_na = all(is.na(mass)), .groups = 'drop') %>%
+      dplyr::ungroup()
+    
+    # Identify rows to remove (where any group has all missing values)
+    rows_to_remove <- group_summary %>%
+      dplyr::group_by(rowid) %>%
+      dplyr::summarise(remove = any(all_na)) %>%
+      dplyr::filter(remove) %>%
+      dplyr::pull(rowid) %>%
+      unique()
+    
+    # Filter out rows with any completely missing group
+    filtered_data <- long_data %>%
+      dplyr::filter(!(rowid %in% rows_to_remove)) %>%
+      dplyr::select(-group)
+    
+    # Reshape back to wide format and reorder based on the original order
+    com_data <- filtered_data %>%
+      tidyr::pivot_wider(names_from = name, values_from = mass) %>%
+      dplyr::arrange(original_order) %>%
+      dplyr::select(-original_order)
+    
+    return(com_data)
+  } 
+  
+  com_data <- complete_data_fn (data_input, groups)
+  
+  #Giving original name to the first column
+  com_data1 <- com_data
+  colnames(com_data1)[1] <- colnames(data_input)[1]
+  
+  #Extracting the first column contains ID information
+  com_data_ID <- com_data1[,1]
+  
+  #Removing the ID column and selecting remaining data
+  com_data2 <- com_data1[,-1]
+  
+  #Giving original name to the first column
+  com_data1 <- com_data
+  colnames(com_data1)[1] <- colnames(data_input)[1]
+  
+  #Extracting the first column contains ID information
+  com_data_ID <- com_data1[,1]
+  
+  #Removing the ID column and selecting remaining data
+  com_data2 <- com_data1[,-1]
+  
+  data_input <- as.data.frame(com_data2)
   
   # VSN Normalization function
   VSN_Norm <- function(dat) {
